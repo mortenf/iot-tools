@@ -3,6 +3,7 @@
 import getopt
 from ConfigParser import SafeConfigParser
 import paho.mqtt.client as mqtt
+import paho.mqtt.publish as publish
 import sys
 import os
 import datetime
@@ -24,33 +25,15 @@ def on_connect(client, userdata, flags, rc):
     client.subscribe(subtopic)
 
 
-# Internal function for publishing the first message in the publisher userdata queue
-def _do_publish(c):
-    (verbose, msgs, pubtopic) = c._userdata
-    m = msgs[0]
-    msgs = msgs[1:]
-    c._userdata = (verbose, msgs, pubtopic)
-    (topic, payload, qos, retain) = m
-    c.publish(topic, payload, qos, retain)
-    if verbose > 0:
-        print(str(datetime.datetime.utcnow())+": message to @"+topic+" published: "+str(payload))
-
-
-# The callback for when a message has been published by the publisher
-def on_publish(c, userdata, mid):
-    (verbose, msgs, pubtopic) = userdata
-    if len(msgs) != 0:
-        _do_publish(c)
-
-
 # The callback for when a PUBLISH message is received from the server.
 def on_message(client, userdata, msg):
     (verbose, pub, subtopic) = userdata
     if verbose > 0:
         print(str(datetime.datetime.utcnow())+": message from @"+msg.topic+" received: "+str(msg.payload))
-    (verbose, msgs, pubtopic) = pub._userdata
-    pub._userdata = (verbose, [(pubtopic, msg.payload, msg.qos, msg.retain)], pubtopic)
-    _do_publish(pub)
+    msgs = [ { "topic": pub["topic"], "payload": msg.payload, "qos": msg.qos, "retain": msg.retain } ]
+    publish.multiple(msgs, hostname=pub["hostname"], port=pub["port"], client_id=pub["client_id"], auth=pub["auth"])
+    if verbose > 0:
+        print(str(datetime.datetime.utcnow())+": message(s) published: "+str(msgs))
 
 
 def do_mqtt_forward(config, section, verbose):
@@ -62,11 +45,11 @@ def do_mqtt_forward(config, section, verbose):
     subcfg = cfg.get(section, "sub")
 
     # publication setup
-    pub = mqtt.Client(client_id=cfg.get(pubcfg, "client_id"), userdata=(verbose, [], cfg.get(pubcfg, "topic")))
-    pub.on_publish = on_publish
     if eval(cfg.get(pubcfg, "auth")):
-        pub.username_pw_set(cfg.get(pubcfg, "user"), cfg.get(pubcfg, "password"))
-    pub.connect(cfg.get(pubcfg, "hostname"), eval(cfg.get(pubcfg, "port")), 60)
+        pubauth = { "username": cfg.get(pubcfg, "user"), "password": cfg.get(pubcfg, "password") }
+    else:
+        pubauth = None
+    pub = { "hostname": cfg.get(pubcfg, "hostname"), "port": eval(cfg.get(pubcfg, "port")), "auth": pubauth, "client_id": cfg.get(pubcfg, "client_id"), "topic": cfg.get(pubcfg, "topic") }
 
     # subscription setup
     sub = mqtt.Client(client_id=cfg.get(subcfg, "client_id"), userdata=(verbose, pub, cfg.get(subcfg, "topic")))
