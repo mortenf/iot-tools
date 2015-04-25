@@ -7,6 +7,7 @@ import paho.mqtt.publish as publish
 import sys
 import os
 import datetime
+import socket
 
 __usage__ = """
  usage: python mqtt-forward.py [options] configuration_file configuration_section
@@ -31,10 +32,12 @@ def on_message(client, userdata, msg):
     if verbose > 0:
         print(str(datetime.datetime.utcnow())+": message from @"+msg.topic+" received: "+str(msg.payload))
     msgs = [ { "topic": pub["topic"], "payload": msg.payload, "qos": msg.qos, "retain": msg.retain } ]
-    publish.multiple(msgs, hostname=pub["hostname"], port=pub["port"], client_id=pub["client_id"], auth=pub["auth"])
-    if verbose > 0:
-        print(str(datetime.datetime.utcnow())+": message(s) published: "+str(msgs))
-
+    try:
+        publish.multiple(msgs, hostname=pub["hostname"], port=pub["port"], client_id=pub["client_id"], auth=pub["auth"])
+        if verbose > 0:
+            print(str(datetime.datetime.utcnow())+": message(s) published: "+str(msgs))
+    except socket.error, e:
+        print >>sys.stderr, "%s: socket error: %s" % (str(datetime.datetime.utcnow()), e)
 
 def do_mqtt_forward(config, section, verbose):
     # configuration
