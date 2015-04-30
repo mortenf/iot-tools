@@ -8,6 +8,7 @@ import sys
 import os
 import datetime
 import socket
+from jq import jq
 
 __usage__ = """
  usage: python mqtt-forward.py [options] configuration_file configuration_section
@@ -31,17 +32,32 @@ def on_message(client, userdata, msg):
     (verbose, pub, subtopic) = userdata
     if verbose > 0:
         print(str(datetime.datetime.utcnow())+": message from @"+msg.topic+" received: "+str(msg.payload))
-    msgs = [ { "topic": pub["topic"], "payload": msg.payload, "qos": msg.qos, "retain": msg.retain } ]
+    if pub["transform"] != None:
+        msgs = []
+        try:
+            mm = jq( pub["transform"] ).transform(text=msg.payload, multiple_output=True)
+            if isinstance(mm, list):
+                mm = mm[0]
+            if not isinstance(mm, list):
+                mm = [mm]
+            for m in mm:
+                m = jq( '.' ).transform(m, text_output=True)
+                msgs.append( { "topic": pub["topic"], "payload": str(m), "qos": msg.qos, "retain": msg.retain } )
+        except Exception, e:
+            print >>sys.stderr, "%s: jq error: %s" % (str(datetime.datetime.utcnow()), e)
+            return
+    else:
+        msgs = [ { "topic": pub["topic"], "payload": msg.payload, "qos": msg.qos, "retain": msg.retain } ]
     try:
         publish.multiple(msgs, hostname=pub["hostname"], port=pub["port"], client_id=pub["client_id"], auth=pub["auth"])
         if verbose > 0:
-            print(str(datetime.datetime.utcnow())+": message(s) published: "+str(msgs))
-    except socket.error, e:
-        print >>sys.stderr, "%s: socket error: %s" % (str(datetime.datetime.utcnow()), e)
+            print(str(datetime.datetime.utcnow())+": "+str(len(msgs))+" message(s) published: "+str(msgs))
+    except Exception, e:
+        print >>sys.stderr, "%s: publishing error: %s" % (str(datetime.datetime.utcnow()), e)
 
 def do_mqtt_forward(config, section, verbose):
     # configuration
-    cfg = SafeConfigParser({"client_id": "mqtt-forward-"+section+'-'+str(os.getpid()), "hostname": "localhost", "port": "1883", "retain": "False", "auth": "False"})
+    cfg = SafeConfigParser({"client_id": "mqtt-forward-"+section+'-'+str(os.getpid()), "hostname": "localhost", "port": "1883", "retain": "False", "auth": "False", "transform": None})
     cfg.optionxform = str
     cfg.read(config)
     pubcfg = cfg.get(section, "pub")
@@ -52,7 +68,7 @@ def do_mqtt_forward(config, section, verbose):
         pubauth = { "username": cfg.get(pubcfg, "user"), "password": cfg.get(pubcfg, "password") }
     else:
         pubauth = None
-    pub = { "hostname": cfg.get(pubcfg, "hostname"), "port": eval(cfg.get(pubcfg, "port")), "auth": pubauth, "client_id": cfg.get(pubcfg, "client_id"), "topic": cfg.get(pubcfg, "topic") }
+    pub = { "hostname": cfg.get(pubcfg, "hostname"), "port": eval(cfg.get(pubcfg, "port")), "auth": pubauth, "client_id": cfg.get(pubcfg, "client_id"), "topic": cfg.get(pubcfg, "topic"), "transform": cfg.get(pubcfg, "transform") }
 
     # subscription setup
     sub = mqtt.Client(client_id=cfg.get(subcfg, "client_id"), userdata=(verbose, pub, cfg.get(subcfg, "topic")))

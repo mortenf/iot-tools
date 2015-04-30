@@ -8,6 +8,7 @@ Currently the collection consists of a python script for forwarding messages via
 ## mqtt-forward.py
 
 A Python script that subscribes to a topic using MQTT and publishes all messages to another topic (possibly on another broker).
+Requires [paho-mqtt](https://pypi.python.org/pypi/paho-mqtt) and [jq](https://pypi.python.org/pypi/jq/).
 
 ### Usage
 
@@ -33,13 +34,14 @@ client_id = <device client id>
 auth = True
 user = <username>
 password = <password>
+transform = [ .temp_out_c, .temp_in_c ]
 ```
 
 ### Sample Output
 
 ```
-2015-04-13 21:57:32.249259: message from @weather/pywws received: {"rel_pressue": "30.2623", "wind_ave": "3.80", "rain": "0", "rainin": "0", "hum_in": "44", "temp_in_f": "68.0", "dailyrainin": "0.318898", "wind_dir": "315", "temp_in_c": "20.0", "hum_out": "66", "dailyrain": "8.1", "wind_gust": "9.17", "idx": "2015-04-13 21:57:26", "temp_out_f": "40.5", "temp_out_c": "4.7"}
-2015-04-13 21:57:32.549034: message(s) published: [{'topic': '/users/mortenhf/test', 'retain': 0, 'qos': 0, 'payload': '{"rel_pressue": "30.2623", "wind_ave": "3.80", "rain": "0", "rainin": "0", "hum_in": "44", "temp_in_f": "68.0", "dailyrainin": "0.318898", "wind_dir": "315", "temp_in_c": "20.0", "hum_out": "66", "dailyrain": "8.1", "wind_gust": "9.17", "idx": "2015-04-13 21:57:26", "temp_out_f": "40.5", "temp_out_c": "4.7"}'}]
+2015-04-30 21:29:34.036263: message from @weather/pywws received: {"displayname": "Rosenborg 68750", "wind_dir_txt": "E", "rel_pressure_hpa": 1009.7, "guid": "8B22C249-CF00-40C7-B460-38C559C69F42", "wind_dir_deg": 90, "rain_mm": 0.0, "hum_in_perc": 46, "timecreated": "2015-04-30T21:29:31Z", "hum_out_perc": 89, "temp_out_c": 6.2, "wind_gust_mps": 0.3, "wind_speed_mps": 0.0, "location": "Risbjerg, Hvidovre, Denmark", "organization": "Morten Frederiksen", "temp_in_c": 20.6}
+2015-04-30 21:29:34.053457: 2 message(s) published: [{'topic': 'test/test', 'retain': 0, 'qos': 0, 'payload': '6.2'}, {'topic': 'test/test', 'retain': 0, 'qos': 0, 'payload': '20.6'}]
 ```
 
 ## License
