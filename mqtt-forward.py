@@ -41,8 +41,14 @@ def on_message(client, userdata, msg):
             if not isinstance(mm, list):
                 mm = [mm]
             for m in mm:
+                if isinstance(m, dict) and m.keys() == ["topic", "message"]:
+                    topic = m["topic"]
+                    m = m["message"]
+                else:
+                    topic = pub["topic"]
+                print m
                 m = jq( '.' ).transform(m, text_output=True)
-                msgs.append( { "topic": pub["topic"], "payload": str(m), "qos": msg.qos, "retain": msg.retain } )
+                msgs.append( { "topic": topic, "payload": str(m), "qos": msg.qos, "retain": msg.retain } )
         except Exception, e:
             print >>sys.stderr, "%s: jq error: %s" % (str(datetime.datetime.utcnow()), e)
             return
