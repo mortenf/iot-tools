@@ -32,6 +32,11 @@ def on_message(client, userdata, msg):
     (verbose, pub, subtopic) = userdata
     if verbose > 0:
         print(str(datetime.datetime.utcnow())+": message from @"+msg.topic+" received: "+str(msg.payload))
+    # Generate outgoing topic by splicing with incoming topic at #
+    pubtopic = pub["topic"]
+    if subtopic.index('#') != -1 and pubtopic.index('#') != -1:
+        pubtopic = pubtopic[0:pubtopic.index('#')]+msg.topic[subtopic.index('#'):]
+    # Transform topic and message as JSON via jq
     if pub["transform"] != None:
         msgs = []
         try:
@@ -41,19 +46,18 @@ def on_message(client, userdata, msg):
             if not isinstance(mm, list):
                 mm = [mm]
             for m in mm:
-                if isinstance(m, dict) and m.keys() == ["topic", "message"]:
-                    topic = m["topic"]
-                    m = m["message"]
+                if isinstance(m, dict) and m.keys() == ["topic", "payload"]:
+                    topic = str(m["topic"])
+                    m = m["payload"]
                 else:
-                    topic = pub["topic"]
-                print m
+                    topic = pubtopic
                 m = jq( '.' ).transform(m, text_output=True)
                 msgs.append( { "topic": topic, "payload": str(m), "qos": msg.qos, "retain": msg.retain } )
         except Exception, e:
             print >>sys.stderr, "%s: jq error: %s" % (str(datetime.datetime.utcnow()), e)
             return
     else:
-        msgs = [ { "topic": pub["topic"], "payload": msg.payload, "qos": msg.qos, "retain": msg.retain } ]
+        msgs = [ { "topic": pubtopic, "payload": msg.payload, "qos": msg.qos, "retain": msg.retain } ]
     try:
         publish.multiple(msgs, hostname=pub["hostname"], port=pub["port"], client_id=pub["client_id"], auth=pub["auth"])
         if verbose > 0:
