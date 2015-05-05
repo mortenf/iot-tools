@@ -24,7 +24,7 @@ sub = local_pywws
 pub = opensensors_wh1080
 
 [local_pywws]
-topic = weather/pywws
+topic = weather/#
 hostname = localhost
 
 [opensensors_wh1080]
@@ -34,14 +34,17 @@ client_id = <device client id>
 auth = True
 user = <username>
 password = <password>
-transform = [ .temp_out_c, .temp_in_c ]
+transform = [
+    { topic: "/users/<username>/test/out", payload: .temp_out_c },
+    { topic: "/users/<username>/test/in", payload: .temp_in_c }
+    ]
 ```
 
 ### Sample Output
 
 ```
 2015-04-30 21:29:34.036263: message from @weather/pywws received: {"displayname": "Rosenborg 68750", "wind_dir_txt": "E", "rel_pressure_hpa": 1009.7, "guid": "8B22C249-CF00-40C7-B460-38C559C69F42", "wind_dir_deg": 90, "rain_mm": 0.0, "hum_in_perc": 46, "timecreated": "2015-04-30T21:29:31Z", "hum_out_perc": 89, "temp_out_c": 6.2, "wind_gust_mps": 0.3, "wind_speed_mps": 0.0, "location": "Risbjerg, Hvidovre, Denmark", "organization": "Morten Frederiksen", "temp_in_c": 20.6}
-2015-04-30 21:29:34.053457: 2 message(s) published: [{'topic': 'test/test', 'retain': 0, 'qos': 0, 'payload': '6.2'}, {'topic': 'test/test', 'retain': 0, 'qos': 0, 'payload': '20.6'}]
+2015-04-30 21:29:34.053457: 2 message(s) published: [{'topic': 'test/test/out', 'retain': 0, 'qos': 0, 'payload': '6.2'}, {'topic': 'test/test/in', 'retain': 0, 'qos': 0, 'payload': '20.6'}]
 ```
 
 ## License
