@@ -9,13 +9,20 @@ import os
 import datetime
 import socket
 from jq import jq
+from time import sleep
+import threading
+import signal
 
 __usage__ = """
- usage: python mqtt-forward.py [options] configuration_file configuration_section
+ usage: python mqtt-forward.py [options] configuration_file configuration_section(s)
  options are:
   -h or --help     display this help
   -v or --verbose  increase amount of reassuring messages
 """
+
+# Exit signals
+done = 0
+reload = 0
 
 # The callback for when the subscriber receives a CONNACK response from the server.
 def on_connect(client, userdata, flags, rc):
@@ -34,8 +41,8 @@ def on_message(client, userdata, msg):
         print(str(datetime.datetime.utcnow())+": message from @"+msg.topic+" received: "+str(msg.payload))
     # Generate outgoing topic by splicing with incoming topic at #
     pubtopic = pub["topic"]
-    if subtopic.index('#') != -1 and pubtopic.index('#') != -1:
-        pubtopic = pubtopic[0:pubtopic.index('#')]+msg.topic[subtopic.index('#'):]
+    if subtopic.find('#') != -1 and pubtopic.find('#') != -1:
+        pubtopic = pubtopic[0:pubtopic.find('#')]+msg.topic[subtopic.find('#'):]
     # Transform topic and message as JSON via jq
     if pub["transform"] != None:
         msgs = []
@@ -88,13 +95,34 @@ def do_mqtt_forward(config, section, verbose):
         sub.username_pw_set(cfg.get(subcfg, "user"), cfg.get(subcfg, "password"))
     sub.connect(cfg.get(subcfg, "hostname"), eval(cfg.get(subcfg, "port")), 60)
 
-    # Blocking call that processes network traffic, dispatches callbacks and
-    # handles reconnecting.
-    # Other loop*() functions are available that give a threaded interface and a
-    # manual interface.
-    sub.loop_forever()
+    # Loop until done...
+    sub.loop_start()
+    while not done:
+        sleep(1)
+    sub.loop_stop()
     return 0
 
+
+class mqttThread(threading.Thread):
+    def __init__(self, config, section, verbose):
+        threading.Thread.__init__(self)
+        self.config = config
+        self.section = section
+        self.verbose = verbose
+    def run(self):
+        if self.verbose > 0:
+            print(str(datetime.datetime.utcnow())+": starting thread for "+str(self.section))
+        do_mqtt_forward(self.config, self.section, self.verbose)
+        if self.verbose > 0:
+            print(str(datetime.datetime.utcnow())+": ending thread for "+str(self.section))
+
+def signal_handler(signum, frame):
+    global reload, done
+    signame = tuple((v) for v, k in signal.__dict__.iteritems() if k == signum)[0]
+    print >>sys.stderr, "%s: %s received" % (str(datetime.datetime.utcnow()), signame)
+    if signum == signal.SIGHUP:
+        reload = 1
+    done = 1
 
 def main(argv=None):
     if argv is None:
@@ -115,11 +143,37 @@ def main(argv=None):
         elif o == '-v' or o == '--verbose':
             verbose += 1
     # check arguments
-    if len(args) != 2:
-        print >>sys.stderr, "Error: 2 arguments required"
+    if len(args) < 2:
+        print >>sys.stderr, "Error: At least 2 arguments required"
         print >>sys.stderr, __usage__.strip()
         return 2
-    return do_mqtt_forward(args[0], args[1], verbose)
+    config = args.pop(0)
+    sections = args
+    global done, reload
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGHUP, signal_handler)
+    while not done:
+        threads = []
+        for section in sections:
+            try:
+                thread = mqttThread(config, section, verbose)
+                thread.start()
+                sleep(0.1)
+            except Exception, e:
+                print >>sys.stderr, "%s: thread error for %s: %s" % (str(datetime.datetime.utcnow()), section, e)
+        while not done:
+            sleep(1)
+        if verbose > 0:
+            print(str(datetime.datetime.utcnow())+": waiting for threads to finish...")
+        for thread in threads:
+            thread.join()
+        while len(threading.enumerate()) > 1:
+            sleep(0.1)
+        if reload:
+            done = 0
+            reload = 0
+    if verbose > 0:
+        print(str(datetime.datetime.utcnow())+": finished")
 
 if __name__ == "__main__":
     sys.exit(main())
