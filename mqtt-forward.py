@@ -59,12 +59,12 @@ def on_message(client, userdata, msg):
                 else:
                     topic = pubtopic
                 m = jq( '.' ).transform(m, text_output=True)
-                msgs.append( { "topic": topic, "payload": str(m), "qos": msg.qos, "retain": msg.retain } )
+                msgs.append( { "topic": topic, "payload": str(m), "qos": pub["qos"], "retain": pub["retain"] } )
         except Exception, e:
             print >>sys.stderr, "%s: jq error: %s" % (str(datetime.datetime.utcnow()), e)
             return
     else:
-        msgs = [ { "topic": pubtopic, "payload": msg.payload, "qos": msg.qos, "retain": msg.retain } ]
+        msgs = [ { "topic": pubtopic, "payload": msg.payload, "qos": pub["qos"], "retain": pub["retain"] } ]
     try:
         publish.multiple(msgs, hostname=pub["hostname"], port=pub["port"], client_id=pub["client_id"], auth=pub["auth"])
         if verbose > 0:
@@ -74,7 +74,7 @@ def on_message(client, userdata, msg):
 
 def do_mqtt_forward(config, section, verbose):
     # configuration
-    cfg = SafeConfigParser({"client_id": "mqtt-forward-"+section+'-'+str(os.getpid()), "hostname": "localhost", "port": "1883", "retain": "False", "auth": "False", "transform": None})
+    cfg = SafeConfigParser({"client_id": "mqtt-forward-"+section+'-'+str(os.getpid()), "hostname": "localhost", "port": "1883", "retain": "False", "auth": "False", "transform": None, "retain": "False", "qos": "0"})
     cfg.optionxform = str
     cfg.read(config)
     pubcfg = cfg.get(section, "pub")
@@ -85,7 +85,7 @@ def do_mqtt_forward(config, section, verbose):
         pubauth = { "username": cfg.get(pubcfg, "user"), "password": cfg.get(pubcfg, "password") }
     else:
         pubauth = None
-    pub = { "hostname": cfg.get(pubcfg, "hostname"), "port": eval(cfg.get(pubcfg, "port")), "auth": pubauth, "client_id": cfg.get(pubcfg, "client_id"), "topic": cfg.get(pubcfg, "topic"), "transform": cfg.get(pubcfg, "transform") }
+    pub = { "hostname": cfg.get(pubcfg, "hostname"), "port": eval(cfg.get(pubcfg, "port")), "auth": pubauth, "client_id": cfg.get(pubcfg, "client_id"), "topic": cfg.get(pubcfg, "topic"), "transform": cfg.get(pubcfg, "transform"), "retain": eval(cfg.get(pubcfg, "retain")), "qos": eval(cfg.get(pubcfg, "qos")) }
 
     # subscription setup
     sub = mqtt.Client(client_id=cfg.get(subcfg, "client_id"), userdata=(verbose, pub, cfg.get(subcfg, "topic")))
