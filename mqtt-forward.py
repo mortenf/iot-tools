@@ -41,6 +41,8 @@ def on_message(client, userdata, msg):
         print(str(datetime.datetime.utcnow())+": message from @"+msg.topic+" received: "+str(msg.payload))
     # Generate outgoing topic by splicing with incoming topic at #
     pubtopic = pub["topic"]
+    qos = pub["qos"]
+    retain = pub["retain"]
     if subtopic.find('#') != -1 and pubtopic.find('#') != -1:
         pubtopic = pubtopic[0:pubtopic.find('#')]+msg.topic[subtopic.find('#'):]
     # Transform topic and message as JSON via jq
@@ -53,13 +55,17 @@ def on_message(client, userdata, msg):
             if not isinstance(mm, list):
                 mm = [mm]
             for m in mm:
-                if isinstance(m, dict) and m.keys() == ["topic", "payload"]:
+                if isinstance(m, dict) and "topic" in m and "payload" in m:
                     topic = str(m["topic"])
+                    if "qos" in m:
+                        qos = m["qos"]
+                    if "retain" in m:
+                        retain = m["retain"]
                     m = m["payload"]
                 else:
                     topic = pubtopic
                 m = jq( '.' ).transform(m, text_output=True)
-                msgs.append( { "topic": topic, "payload": str(m), "qos": pub["qos"], "retain": pub["retain"] } )
+                msgs.append( { "topic": topic, "payload": str(m), "qos": qos, "retain": retain } )
         except Exception, e:
             print >>sys.stderr, "%s: jq error: %s" % (str(datetime.datetime.utcnow()), e)
             return
