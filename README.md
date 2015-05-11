@@ -36,7 +36,8 @@ user = <username>
 password = <password>
 transform = [
     { topic: "/users/<username>/test/out", payload: .temp_out_c },
-    { topic: "/users/<username>/test/in", payload: .temp_in_c }
+    { topic: "/users/<username>/test/topic", payload: '$TOPIC$', retain: True },
+    { topic: "/users/<username>/test/in", payload: .temp_in_c, qos: 1 }
     ]
 qos = 0
 retain = False

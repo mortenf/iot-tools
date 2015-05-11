@@ -49,7 +49,7 @@ def on_message(client, userdata, msg):
     if pub["transform"] != None:
         msgs = []
         try:
-            mm = jq( pub["transform"] ).transform(text=msg.payload, multiple_output=True)
+            mm = jq( pub["transform"].replace("$TOPIC$", msg.topic) ).transform(text=msg.payload, multiple_output=True)
             if isinstance(mm, list):
                 mm = mm[0]
             if not isinstance(mm, list):
