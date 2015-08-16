@@ -6,12 +6,15 @@ import paho.mqtt.client as mqtt
 import paho.mqtt.publish as publish
 import sys
 import os
+import re
 import datetime
 import socket
 from jq import jq
 from time import sleep
 import threading
 import signal
+import urllib3
+urllib3.disable_warnings()
 
 __usage__ = """
  usage: python mqtt-forward.py [options] configuration_file configuration_section(s)
@@ -28,7 +31,7 @@ reload = 0
 def on_connect(client, userdata, flags, rc):
     (verbose, pub, subtopic) = userdata
     if (verbose > 0):
-        print("sub connected with result code "+str(rc))
+        print("sub for "+subtopic+" connected with result code "+str(rc))
     # Subscribing in on_connect() means that if we lose the connection and
     # reconnect then subscriptions will be renewed.
     client.subscribe(subtopic)
@@ -38,7 +41,7 @@ def on_connect(client, userdata, flags, rc):
 def on_message(client, userdata, msg):
     (verbose, pub, subtopic) = userdata
     if verbose > 0:
-        print(str(datetime.datetime.utcnow())+": message from @"+msg.topic+" received: "+str(msg.payload))
+        print(str(datetime.datetime.utcnow())+": message from "+msg.topic+" received: "+str(msg.payload))
     # Generate outgoing topic by splicing with incoming topic at #
     pubtopic = pub["topic"]
     qos = pub["qos"]
@@ -49,7 +52,11 @@ def on_message(client, userdata, msg):
     if pub["transform"] != None:
         msgs = []
         try:
-            mm = jq( pub["transform"].replace("$TOPIC$", msg.topic) ).transform(text=msg.payload, multiple_output=True)
+            if verbose > 1:
+                print(str(datetime.datetime.utcnow())+": transforming message = "+str(msg.payload))
+            mm = jq(pub["transform"].replace("$TOPIC$", msg.topic)).transform(text=msg.payload, multiple_output=True)
+            if verbose > 1:
+                print(str(datetime.datetime.utcnow())+": transformed message = "+str(mm))
             if isinstance(mm, list):
                 mm = mm[0]
             if not isinstance(mm, list):
@@ -57,6 +64,8 @@ def on_message(client, userdata, msg):
             for m in mm:
                 if isinstance(m, dict) and "topic" in m and "payload" in m:
                     topic = str(m["topic"])
+                    qos = pub["qos"]
+                    retain = pub["retain"]
                     if "qos" in m:
                         qos = m["qos"]
                     if "retain" in m:
@@ -64,19 +73,35 @@ def on_message(client, userdata, msg):
                     m = m["payload"]
                 else:
                     topic = pubtopic
-                m = jq( '.' ).transform(m, text_output=True)
-                msgs.append( { "topic": topic, "payload": str(m), "qos": qos, "retain": retain } )
+                m = str(jq('.').transform(m, text_output=True))
+                m = re.sub('<<<(.+?)>>>', lambda s: eval(s.group(1)), m)
+                msgs.append( { "topic": topic, "payload": m, "qos": qos, "retain": retain } )
         except Exception, e:
             print >>sys.stderr, "%s: jq error: %s" % (str(datetime.datetime.utcnow()), e)
             return
     else:
         msgs = [ { "topic": pubtopic, "payload": msg.payload, "qos": pub["qos"], "retain": pub["retain"] } ]
     try:
-        publish.multiple(msgs, hostname=pub["hostname"], port=pub["port"], client_id=pub["client_id"], auth=pub["auth"])
+        if len(msgs) > 0:
+            pubc = mqtt.Client(client_id=pub["client_id"])
+            if pub["auth"] is not None:
+                pubc.username_pw_set(pub["auth"]["username"], pub["auth"]["password"])
+            pubc.connect(pub["hostname"], pub["port"], 60)
+            pubc.loop_start()
+            for m in msgs:
+                if verbose > 1:
+                    print(str(datetime.datetime.utcnow())+": publishing "+str(m))
+                if len(m["topic"]) > 7 and (m["topic"][:7] == "http://" or m["topic"][:8] == "https://"):
+                    pool = urllib3.PoolManager()
+                    pool.urlopen('POST', m["topic"], headers={'Content-Type':'application/json'}, body=m["payload"])
+                else:
+                    pubc.publish(m["topic"], m["payload"], m["qos"], m["retain"])
+            pubc.loop_stop()
+            pubc.disconnect()
         if verbose > 0:
             print(str(datetime.datetime.utcnow())+": "+str(len(msgs))+" message(s) published: "+str(msgs))
     except Exception, e:
-        print >>sys.stderr, "%s: publishing error: %s" % (str(datetime.datetime.utcnow()), e)
+        print >>sys.stderr, "%s: publishing error, %s, for %s" % (str(datetime.datetime.utcnow()), e, str(msgs))
 
 def do_mqtt_forward(config, section, verbose):
     # configuration
@@ -91,10 +116,10 @@ def do_mqtt_forward(config, section, verbose):
         pubauth = { "username": cfg.get(pubcfg, "user"), "password": cfg.get(pubcfg, "password") }
     else:
         pubauth = None
-    pub = { "hostname": cfg.get(pubcfg, "hostname"), "port": eval(cfg.get(pubcfg, "port")), "auth": pubauth, "client_id": cfg.get(pubcfg, "client_id"), "topic": cfg.get(pubcfg, "topic"), "transform": cfg.get(pubcfg, "transform"), "retain": eval(cfg.get(pubcfg, "retain")), "qos": eval(cfg.get(pubcfg, "qos")) }
+    pub = { "hostname": cfg.get(pubcfg, "hostname"), "port": eval(cfg.get(pubcfg, "port")), "auth": pubauth, "client_id": cfg.get(pubcfg, "client_id")+"_pub", "topic": cfg.get(pubcfg, "topic"), "transform": cfg.get(pubcfg, "transform"), "retain": eval(cfg.get(pubcfg, "retain")), "qos": eval(cfg.get(pubcfg, "qos")) }
 
     # subscription setup
-    sub = mqtt.Client(client_id=cfg.get(subcfg, "client_id"), userdata=(verbose, pub, cfg.get(subcfg, "topic")))
+    sub = mqtt.Client(client_id=cfg.get(subcfg, "client_id")+"_sub", userdata=(verbose, pub, cfg.get(subcfg, "topic")))
     sub.on_connect = on_connect
     sub.on_message = on_message
     if eval(cfg.get(subcfg, "auth")):
@@ -140,6 +165,7 @@ def main(argv=None):
         print >>sys.stderr, 'Error: %s\n' % msg
         print >>sys.stderr, __usage__.strip()
         return 1
+    sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)
     # process options
     verbose = 0
     for o, a in opts:
@@ -154,11 +180,19 @@ def main(argv=None):
         print >>sys.stderr, __usage__.strip()
         return 2
     config = args.pop(0)
-    sections = args
     global done, reload
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGHUP, signal_handler)
     while not done:
+        sections = args
+        # use special section with global configuration and section names?
+        if len(sections) == 1 and sections[0] == "mqtt-forward":
+            cfg = SafeConfigParser({"verbose": str(verbose)})
+            cfg.optionxform = str
+            cfg.read(config)
+            sections = filter(None, cfg.get("mqtt-forward", "sections").split())
+            verbose = eval(cfg.get("mqtt-forward", "verbose"))
+        # start threads
         threads = []
         for section in sections:
             try:
