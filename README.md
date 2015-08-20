@@ -3,7 +3,46 @@ IoT Tools
 
 This is a - small, possibly growing - collection of tools for working with [IoT](http://en.wikipedia.org/wiki/Internet_of_Things) - the Internet of Things.
 
-Currently the collection consists of a python script for forwarding messages via [MQTT](http://mqtt.org/).
+Currently the collection consists of a python script for forwarding messages via [MQTT](http://mqtt.org/), and a Node script for forwarding messages from MQTT to AMQP 1.0.
+
+## mqtt-amqp.js
+
+A Node script that subscribes to a topic using MQTT and publishes all messages to an AMQP 1.0 broker, e.g. a Azure Service Bus Event Hub, using the topic as the partition key.
+Configuration must be stored in mqtt-amqp.conf.
+
+### Usage
+
+```bash
+Usage: mqtt-amqp.js [options] <configuration file>
+
+  Options:
+
+    -h, --help     output usage information
+    -v, --verbose  increase number of reassuring output messages
+```
+
+### Sample Configuration
+
+```
+var config = {
+        "mqtt": {
+                "host": "localhost",
+                "port": 1883,
+                "username": "<username (optional)>",
+                "password": "<password (optional)>",
+                "topic": "weather/#"
+        },
+        "amqp": {
+                "host": "<name>.servicebus.windows.net",
+                "sas": {
+                        "name": "<sas name>",
+                        "key": "<sas key>"
+                },
+                "name": "<event hub name>"
+        }
+}
+module.exports = config;
+```
 
 ## mqtt-forward.py
 
