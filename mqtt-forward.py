@@ -29,7 +29,7 @@ reload = 0
 
 # The callback for when the subscriber receives a CONNACK response from the server.
 def on_connect(client, userdata, flags, rc):
-    (verbose, pub, subtopic) = userdata
+    (verbose, pub, subtopic, subplain) = userdata
     if (verbose > 0):
         print("sub for "+subtopic+" connected with result code "+str(rc))
     # Subscribing in on_connect() means that if we lose the connection and
@@ -39,11 +39,14 @@ def on_connect(client, userdata, flags, rc):
 
 # The callback for when a PUBLISH message is received from the server.
 def on_message(client, userdata, msg):
-    (verbose, pub, subtopic) = userdata
+    (verbose, pub, subtopic, subplain) = userdata
     if verbose > 0:
-        print(str(datetime.datetime.utcnow())+": message from "+msg.topic+" received: "+str(msg.payload))
+        print(str(datetime.datetime.utcnow())+" @"+msg.topic+": message received: "+str(msg.payload))
+    if verbose > 3:
+        print(str(datetime.datetime.utcnow())+" @"+msg.topic+": pub settings = "+str(pub))
     # Generate outgoing topic by splicing with incoming topic at #
     pubtopic = pub["topic"]
+    plain = pub["plain"]
     qos = pub["qos"]
     retain = pub["retain"]
     if subtopic.find('#') != -1 and pubtopic.find('#') != -1:
@@ -52,32 +55,54 @@ def on_message(client, userdata, msg):
     if pub["transform"] != None:
         msgs = []
         try:
-            if verbose > 1:
-                print(str(datetime.datetime.utcnow())+": transforming message = "+str(msg.payload))
-            mm = jq(pub["transform"].replace("$TOPIC$", msg.topic)).transform(text=msg.payload, multiple_output=True)
-            if verbose > 1:
-                print(str(datetime.datetime.utcnow())+": transformed message = "+str(mm))
+            if subplain:
+                msg.payload = '"' + msg.payload + '"'
+            msg.payload = unicode(msg.payload, 'utf-8')
+            try:
+                mm = jq(pub["transform"].replace("$TOPIC$", msg.topic)).transform(text=msg.payload, multiple_output=True)
+            except Exception, e:
+                print >>sys.stderr, "%s @%s: jq transformation error: %s (%s)" % (str(datetime.datetime.utcnow()), msg.topic, e, msg.payload)
+                return
+            if verbose > 3:
+                print(str(datetime.datetime.utcnow())+" @"+msg.topic+": transformed message(s) = "+str(mm))
             if isinstance(mm, list):
                 mm = mm[0]
             if not isinstance(mm, list):
                 mm = [mm]
             for m in mm:
+                plain = pub["plain"]
+                qos = pub["qos"]
+                retain = pub["retain"]
                 if isinstance(m, dict) and "topic" in m and "payload" in m:
                     topic = str(m["topic"])
-                    qos = pub["qos"]
-                    retain = pub["retain"]
+                    if "plain" in m:
+                        plain = eval(m["plain"])
                     if "qos" in m:
-                        qos = m["qos"]
+                        qos = eval(m["qos"])
                     if "retain" in m:
-                        retain = m["retain"]
+                        retain = eval(m["retain"])
                     m = m["payload"]
                 else:
                     topic = pubtopic
-                m = str(jq('.').transform(m, text_output=True))
-                m = re.sub('<<<(.+?)>>>', lambda s: eval(s.group(1)), m)
+                try:
+                    m = str(jq('.').transform(m, text_output=True))
+                except Exception, e:
+                    print >>sys.stderr, "%s @%s[%i]: jq normalization error: %s (%s)" % (str(datetime.datetime.utcnow()), msg.topic, len(msgs), e, m)
+                    return
+                if verbose > 2:
+                    print(str(datetime.datetime.utcnow())+" @"+msg.topic+"["+str(len(msgs))+"]: transformed message = "+str(m))
+                try:
+                    m = re.sub('<<<(.+?)>>>', lambda s: eval(s.group(1)), m)
+                except Exception, e:
+                    print >>sys.stderr, "%s @%s[%i]: eval error: %s" % (str(datetime.datetime.utcnow()), msg.topic, len(msgs), e)
+                    return
+                if plain and (m[0] == m[-1]) and m.startswith('"'):
+                    m = m[1:-1]
+                if verbose > 1:
+                    print(str(datetime.datetime.utcnow())+" @"+msg.topic+"["+str(len(msgs))+"]: tweaked message = "+str(m))
                 msgs.append( { "topic": topic, "payload": m, "qos": qos, "retain": retain } )
         except Exception, e:
-            print >>sys.stderr, "%s: jq error: %s" % (str(datetime.datetime.utcnow()), e)
+            print >>sys.stderr, "%s @%s[%i]: message error: %s" % (str(datetime.datetime.utcnow()), msg.topic, len(msgs), e)
             return
     else:
         msgs = [ { "topic": pubtopic, "payload": msg.payload, "qos": pub["qos"], "retain": pub["retain"] } ]
@@ -90,7 +115,7 @@ def on_message(client, userdata, msg):
             pubc.loop_start()
             for m in msgs:
                 if verbose > 1:
-                    print(str(datetime.datetime.utcnow())+": publishing "+str(m))
+                    print(str(datetime.datetime.utcnow())+" @"+msg.topic+": publishing "+str(m))
                 if len(m["topic"]) > 7 and (m["topic"][:7] == "http://" or m["topic"][:8] == "https://"):
                     pool = urllib3.PoolManager()
                     pool.urlopen('POST', m["topic"], headers={'Content-Type':'application/json'}, body=m["payload"])
@@ -99,27 +124,44 @@ def on_message(client, userdata, msg):
             pubc.loop_stop()
             pubc.disconnect()
         if verbose > 0:
-            print(str(datetime.datetime.utcnow())+": "+str(len(msgs))+" message(s) published: "+str(msgs))
+            print(str(datetime.datetime.utcnow())+" @"+msg.topic+": "+str(len(msgs))+" message(s) published: "+str(msgs))
     except Exception, e:
-        print >>sys.stderr, "%s: publishing error, %s, for %s" % (str(datetime.datetime.utcnow()), e, str(msgs))
+        print >>sys.stderr, "%s @%s: publishing error, %s, for %s" % (str(datetime.datetime.utcnow()), msg.topic, e, str(msgs))
 
 def do_mqtt_forward(config, section, verbose):
+    # default configuration
+    default = SafeConfigParser({"hostname": "localhost", "port": "1883", "auth": "False", "user": "?", "password": "?", "retain": "False", "qos": "0"})
+    default.optionxform = str
+    default.read(config)
+
     # configuration
-    cfg = SafeConfigParser({"client_id": "mqtt-forward-"+section+'-'+str(os.getpid()), "hostname": "localhost", "port": "1883", "retain": "False", "auth": "False", "transform": None, "retain": "False", "qos": "0"})
+    cfg = SafeConfigParser({"client_id": "mqtt-forward-"+section+'-'+str(os.getpid()), "hostname": default.get("mqtt-forward", "hostname"), "port": default.get("mqtt-forward", "port"), "auth": default.get("mqtt-forward", "auth"), "transform": None, "plain": "False", "retain": default.get("mqtt-forward", "retain"), "qos": default.get("mqtt-forward", "qos"), "user": default.get("mqtt-forward", "user"), "password": default.get("mqtt-forward", "password")})
     cfg.optionxform = str
     cfg.read(config)
-    pubcfg = cfg.get(section, "pub")
-    subcfg = cfg.get(section, "sub")
 
     # publication setup
+    pubcfg = cfg.get(section, "pub")
+    if not cfg.has_section(pubcfg):
+        transform = pubcfg
+        pubtopic = None
+        pubcfg = section
+    else:
+        transform = cfg.get(pubcfg, "transform")
+        pubtopic = cfg.get(pubcfg, "topic")
     if eval(cfg.get(pubcfg, "auth")):
         pubauth = { "username": cfg.get(pubcfg, "user"), "password": cfg.get(pubcfg, "password") }
     else:
         pubauth = None
-    pub = { "hostname": cfg.get(pubcfg, "hostname"), "port": eval(cfg.get(pubcfg, "port")), "auth": pubauth, "client_id": cfg.get(pubcfg, "client_id")+"_pub", "topic": cfg.get(pubcfg, "topic"), "transform": cfg.get(pubcfg, "transform"), "retain": eval(cfg.get(pubcfg, "retain")), "qos": eval(cfg.get(pubcfg, "qos")) }
+    pub = { "hostname": cfg.get(pubcfg, "hostname"), "port": eval(cfg.get(pubcfg, "port")), "auth": pubauth, "client_id": cfg.get(pubcfg, "client_id")+"_pub", "topic": pubtopic, "transform": transform, "plain": eval(cfg.get(pubcfg, "plain")), "retain": eval(cfg.get(pubcfg, "retain")), "qos": eval(cfg.get(pubcfg, "qos")) }
 
     # subscription setup
-    sub = mqtt.Client(client_id=cfg.get(subcfg, "client_id")+"_sub", userdata=(verbose, pub, cfg.get(subcfg, "topic")))
+    subcfg = cfg.get(section, "sub")
+    if not cfg.has_section(subcfg):
+        subtopic = subcfg
+        subcfg = section
+    else:
+        subtopic = cfg.get(subcfg, "topic")
+    sub = mqtt.Client(client_id=cfg.get(subcfg, "client_id")+"_sub", userdata=(verbose, pub, subtopic, eval(cfg.get(subcfg, "plain"))))
     sub.on_connect = on_connect
     sub.on_message = on_message
     if eval(cfg.get(subcfg, "auth")):
