@@ -17,20 +17,19 @@ var config = require(program.args[0]);
 
 // MQTT
 var suburi = 'mqtt://' + config.mqtt.host + ':' + config.mqtt.port;
-var subauthuri = suburi;
 if ((typeof config.mqtt.username !== 'undefined') && (typeof config.mqtt.password !== 'undefined'))
-  subauthuri = suburi.replace('mqtt://', 'mqtt://' + config.mqtt.username + ':' + config.mqtt.password + '@');
+  suburi = suburi.replace('mqtt://', 'mqtt://' + config.mqtt.username + ':' + config.mqtt.password + '@');
 
 // AMQP
 var puburi = 'amqps://' + encodeURIComponent(config.amqp.sas.name) + ':' + encodeURIComponent(config.amqp.sas.key) + '@' + config.amqp.host;
 
 // Connect and subscribe
 var pub = new amqp(amqp.policies.EventHubPolicy);
-var sub = mqtt.connect(subauthuri);
-console.log("sub connecting: " + suburi);
+var sub = mqtt.connect(suburi);
+console.log("sub connecting: " + suburi.replace(/^(\w+:..).+?:.+?@(.+)$/, '$1$2'));
 sub.on('connect', function () {
   console.log("sub connected");
-  console.log("pub connecting: "+puburi);
+  console.log("pub connecting: " + puburi.replace(/^(\w+:..).+?:.+?@(.+)$/, '$1$2'));
   pub.connect(puburi, function () {
     console.log("pub connected")
     sub.subscribe(config.mqtt.topic);
