@@ -23,6 +23,11 @@ __usage__ = """
   -v or --verbose  increase amount of reassuring messages
 """
 
+# Transformations
+transforms = {
+    'xctd2ctd': 'def xctd(x): x as $meta | .[0] | to_entries | map({"measurename": (.key / "_" | .[:-1] | join("_")), "unitofmeasure": (.key / "_" | .[-1:] | join("")), "value": .value }) | map(. + $meta); [with_entries(select(.key!="guid" and .key!="displayname" and .key!="organization" and .key!="location" and .key!="timecreated")),with_entries(select(.key!="guid" and .key!="displayname" and .key!="organization" and .key!="location" and .key!="timecreated"|not))] | xctd(.[1])'
+}
+
 # Exit signals
 done = 0
 reload = 0
@@ -148,6 +153,8 @@ def do_mqtt_forward(config, section, verbose):
     else:
         transform = cfg.get(pubcfg, "transform")
         pubtopic = cfg.get(pubcfg, "topic")
+    if transform in transforms:
+        transform = transforms[transform]
     if eval(cfg.get(pubcfg, "auth")):
         pubauth = { "username": cfg.get(pubcfg, "user"), "password": cfg.get(pubcfg, "password") }
     else:
@@ -228,12 +235,12 @@ def main(argv=None):
     while not done:
         sections = args
         # use special section with global configuration and section names?
+        cfg = SafeConfigParser({"verbose": str(verbose)})
+        cfg.optionxform = str
+        cfg.read(config)
+        verbose = eval(cfg.get("mqtt-forward", "verbose"))
         if len(sections) == 1 and sections[0] == "mqtt-forward":
-            cfg = SafeConfigParser({"verbose": str(verbose)})
-            cfg.optionxform = str
-            cfg.read(config)
             sections = filter(None, cfg.get("mqtt-forward", "sections").split())
-            verbose = eval(cfg.get("mqtt-forward", "verbose"))
         # start threads
         threads = []
         for section in sections:
