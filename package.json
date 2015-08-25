@@ -1,0 +1,13 @@
+{
+  "name": "mqtt-amqp",
+  "description": "Node script for forwarding messages from an MQTT broker to an Azure Service Bus Event Hub via AMQP 1.0",
+  "version": "1.0.0",
+  "private": true,
+  "author": "Morten Høybye Frederiksen <morten@mfd-consult.dk>",
+  "dependencies": {
+    "mqtt": "^1.x.x",
+    "amqp10": "1.0.3",
+    "commander": "^2.x.x"
+  },
+  "license": "GPL"
+}

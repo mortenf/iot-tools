@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
 var mqtt = require('mqtt');
-var amqp = require('amqp10/lib/amqp_client');
+var amqp = require('amqp10');
 var program = require('commander');
 
+// Arguments and configuration
 program
   .usage('[options] <configuration file>')
   .option('-v, --verbose', 'increase number of reassuring output messages', function(v, vv) { return vv + 1; }, 0)
   .parse(process.argv);
-
 if (program.args.length < 1) {
    console.error('Error, missing configuration file argument!');
    program.help();

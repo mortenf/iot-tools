@@ -44,6 +44,8 @@ var config = {
 module.exports = config;
 ```
 
+Note that the topic configuration value may be an array or object, per [mqtt#subscribe](https://www.npmjs.com/package/mqtt#subscribe).
+
 ## mqtt-forward.py
 
 A Python script that subscribes to a topic using MQTT and publishes all messages to another topic (possibly on another broker).
