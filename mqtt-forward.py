@@ -54,7 +54,7 @@ def on_message(client, userdata, msg):
     plain = pub["plain"]
     qos = pub["qos"]
     retain = pub["retain"]
-    if subtopic.find('#') != -1 and pubtopic.find('#') != -1:
+    if subtopic.find('#') != -1 and pubtopic != None and pubtopic.find('#') != -1:
         pubtopic = pubtopic[0:pubtopic.find('#')]+msg.topic[subtopic.find('#'):]
     # Transform topic and message as JSON via jq
     if pub["transform"] != None:
@@ -145,35 +145,35 @@ def do_mqtt_forward(config, section, verbose):
     cfg.read(config)
 
     # publication setup
-    pubcfg = cfg.get(section, "pub")
-    if not cfg.has_section(pubcfg):
-        transform = pubcfg
+    pubsection = cfg.get(section, "pub")
+    if not cfg.has_section(pubsection):
+        transform = pubsection
         pubtopic = None
-        pubcfg = section
+        pubsection = section
     else:
-        transform = cfg.get(pubcfg, "transform")
-        pubtopic = cfg.get(pubcfg, "topic")
+        transform = cfg.get(pubsection, "transform")
+        pubtopic = cfg.get(pubsection, "topic")
     if transform in transforms:
         transform = transforms[transform]
-    if eval(cfg.get(pubcfg, "auth")):
-        pubauth = { "username": cfg.get(pubcfg, "user"), "password": cfg.get(pubcfg, "password") }
+    if eval(cfg.get(pubsection, "auth")):
+        pubauth = { "username": cfg.get(pubsection, "user"), "password": cfg.get(pubsection, "password") }
     else:
         pubauth = None
-    pub = { "hostname": cfg.get(pubcfg, "hostname"), "port": eval(cfg.get(pubcfg, "port")), "auth": pubauth, "client_id": cfg.get(pubcfg, "client_id")+"_pub", "topic": pubtopic, "transform": transform, "plain": eval(cfg.get(pubcfg, "plain")), "retain": eval(cfg.get(pubcfg, "retain")), "qos": eval(cfg.get(pubcfg, "qos")) }
+    pub = { "hostname": cfg.get(pubsection, "hostname"), "port": eval(cfg.get(pubsection, "port")), "auth": pubauth, "client_id": cfg.get(pubsection, "client_id")+"_pub", "topic": pubtopic, "transform": transform, "plain": eval(cfg.get(pubsection, "plain")), "retain": eval(cfg.get(pubsection, "retain")), "qos": eval(cfg.get(pubsection, "qos")) }
 
     # subscription setup
-    subcfg = cfg.get(section, "sub")
-    if not cfg.has_section(subcfg):
-        subtopic = subcfg
-        subcfg = section
+    subsection = cfg.get(section, "sub")
+    if not cfg.has_section(subsection):
+        subtopic = subsection
+        subsection = section
     else:
-        subtopic = cfg.get(subcfg, "topic")
-    sub = mqtt.Client(client_id=cfg.get(subcfg, "client_id")+"_sub", userdata=(verbose, pub, subtopic, eval(cfg.get(subcfg, "plain"))))
+        subtopic = cfg.get(subsection, "topic")
+    sub = mqtt.Client(client_id=cfg.get(subsection, "client_id")+"_sub", userdata=(verbose, pub, subtopic, eval(cfg.get(subsection, "plain"))))
     sub.on_connect = on_connect
     sub.on_message = on_message
-    if eval(cfg.get(subcfg, "auth")):
-        sub.username_pw_set(cfg.get(subcfg, "user"), cfg.get(subcfg, "password"))
-    sub.connect(cfg.get(subcfg, "hostname"), eval(cfg.get(subcfg, "port")), 60)
+    if eval(cfg.get(subsection, "auth")):
+        sub.username_pw_set(cfg.get(subsection, "user"), cfg.get(subsection, "password"))
+    sub.connect(cfg.get(subsection, "hostname"), eval(cfg.get(subsection, "port")), 60)
 
     # Loop until done...
     sub.loop_start()
