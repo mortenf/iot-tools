@@ -159,7 +159,7 @@ def do_mqtt_forward(config, section, verbose):
         pubauth = { "username": cfg.get(pubsection, "user"), "password": cfg.get(pubsection, "password") }
     else:
         pubauth = None
-    pub = { "hostname": cfg.get(pubsection, "hostname"), "port": eval(cfg.get(pubsection, "port")), "auth": pubauth, "client_id": cfg.get(pubsection, "client_id")+"_pub", "topic": pubtopic, "transform": transform, "plain": eval(cfg.get(pubsection, "plain")), "retain": eval(cfg.get(pubsection, "retain")), "qos": eval(cfg.get(pubsection, "qos")) }
+    pub = { "hostname": cfg.get(pubsection, "hostname"), "port": eval(cfg.get(pubsection, "port")), "auth": pubauth, "client_id": cfg.get(pubsection, "client_id"), "topic": pubtopic, "transform": transform, "plain": eval(cfg.get(pubsection, "plain")), "retain": eval(cfg.get(pubsection, "retain")), "qos": eval(cfg.get(pubsection, "qos")) }
 
     # subscription setup
     subsection = cfg.get(section, "sub")
