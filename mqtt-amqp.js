@@ -26,23 +26,33 @@ var puburi = 'amqps://' + encodeURIComponent(config.amqp.sas.name) + ':' + encod
 // Connect and subscribe
 var pub = new amqp(amqp.policies.EventHubPolicy);
 var sub = mqtt.connect(suburi);
-console.log("sub connecting: " + suburi.replace(/^(\w+:..).+?:.+?@(.+)$/, '$1$2'));
+console.log(new Date().toJSON() + ": sub connecting: " + suburi.replace(/^(\w+:..).+?:.+?@(.+)$/, '$1$2'));
 sub.on('connect', function () {
-  console.log("sub connected");
-  console.log("pub connecting: " + puburi.replace(/^(\w+:..).+?:.+?@(.+)$/, '$1$2'));
-  pub.connect(puburi, function () {
-    console.log("pub connected")
-    sub.subscribe(config.mqtt.topic);
-    console.log("subscribed");
-  })
+  console.log(new Date().toJSON() + ": sub connected");
+  pubConnect();
 })
+
+// Publisher connection
+function pubConnect() {
+  console.log(new Date().toJSON() + ": pub connecting: " + puburi.replace(/^(\w+:..).+?:.+?@(.+)$/, '$1$2'));
+  pub.connect(puburi, function (e, s) {
+    if (e !== null) {
+      console.log(new Date().toJSON() + ": pub connection failed: " + e);
+      setTimeout(pubConnect, 2000);
+    } else {
+      console.log(new Date().toJSON() + ": pub connected");
+      sub.subscribe(config.mqtt.topic);
+      console.log(new Date().toJSON() + ": subscribed");
+    }
+  });
+}
 
 // Publish 
 sub.on('message', function (topic, message) {
   if (program.verbose)
-    console.log("received: " + topic + ": " + message.toString());
+    console.log(new Date().toJSON() + ": received: " + topic + ": " + message.toString());
   pub.send(message.toString(), config.amqp.name, { 'x-opt-partition-key' : topic }, function () {
     if (program.verbose)
-      console.log("sent: " + topic + ": " + message.toString());
+      console.log(new Date().toJSON() + ": sent: " + topic + ": " + message.toString());
   });
 });
