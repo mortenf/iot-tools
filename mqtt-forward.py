@@ -60,7 +60,7 @@ def on_message(client, userdata, msg):
     if pub["transform"] != None:
         msgs = []
         try:
-            if subplain:
+            if subplain or re.match('^\s*[a-z0-9]', msg.payload, re.I) != None:
                 msg.payload = '"' + msg.payload + '"'
             msg.payload = unicode(msg.payload, 'utf-8')
             try:
@@ -68,10 +68,10 @@ def on_message(client, userdata, msg):
             except Exception, e:
                 print >>sys.stderr, "%s @%s: jq transformation error: %s (%s)" % (str(datetime.datetime.utcnow()), msg.topic, e, msg.payload)
                 return
-            if verbose > 3:
-                print(str(datetime.datetime.utcnow())+" @"+msg.topic+": transformed message(s) = "+str(mm))
             if isinstance(mm, list):
                 mm = mm[0]
+            if verbose > 3:
+                print(str(datetime.datetime.utcnow())+" @"+msg.topic+": transformed message(s) = "+str(mm))
             if not isinstance(mm, list):
                 mm = [mm]
             for m in mm:
