@@ -13,6 +13,7 @@ if (program.args.length < 1) {
    console.error('Error, missing configuration file argument!');
    program.help();
 }
+console.log(new Date().toJSON() + ": starting with config: " + program.args[0]);
 var config = require(program.args[0]);
 
 // MQTT
