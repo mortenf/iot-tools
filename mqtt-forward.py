@@ -57,58 +57,71 @@ def on_message(client, userdata, msg):
     if subtopic.find('#') != -1 and pubtopic != None and pubtopic.find('#') != -1:
         pubtopic = pubtopic[0:pubtopic.find('#')]+msg.topic[subtopic.find('#'):]
     # Transform topic and message as JSON via jq
+    if verbose > 3 and msg.topic in pub["last"]:
+        print(str(datetime.datetime.utcnow())+" @"+msg.topic+": last = "+pub["last"][msg.topic])
     if pub["transform"] != None:
         msgs = []
-        try:
-            if subplain or re.match('^\s*[a-z0-9]', msg.payload, re.I) != None:
-                msg.payload = '"' + msg.payload + '"'
-            msg.payload = unicode(msg.payload, 'utf-8')
+        transform = pub["transform"]
+        if transform.find("$LAST$") == -1 or msg.topic in pub["last"]:
             try:
-                mm = jq(pub["transform"].replace("$TOPIC$", msg.topic)).transform(text=msg.payload, multiple_output=True)
+                if subplain or re.match('^\s*[a-z0-9]', msg.payload, re.I) != None:
+                    msg.payload = '"' + msg.payload + '"'
+                msg.payload = unicode(msg.payload, 'utf-8')
             except Exception, e:
-                print >>sys.stderr, "%s @%s: jq transformation error: %s (%s)" % (str(datetime.datetime.utcnow()), msg.topic, e, msg.payload)
+                print >>sys.stderr, "%s @%s: message preparation error: %s - %s" % (str(datetime.datetime.utcnow()), msg.topic, e, msg)
                 return
-            if isinstance(mm, list):
-                mm = mm[0]
-            if verbose > 3:
-                print(str(datetime.datetime.utcnow())+" @"+msg.topic+": transformed message(s) = "+str(mm))
-            if not isinstance(mm, list):
-                mm = [mm]
-            for m in mm:
-                plain = pub["plain"]
-                qos = pub["qos"]
-                retain = pub["retain"]
-                if isinstance(m, dict) and "topic" in m and "payload" in m:
-                    topic = str(m["topic"])
-                    if "plain" in m:
-                        plain = eval(m["plain"])
-                    if "qos" in m:
-                        qos = eval(m["qos"])
-                    if "retain" in m:
-                        retain = eval(m["retain"])
-                    m = m["payload"]
-                else:
-                    topic = pubtopic
-                try:
-                    m = str(jq('.').transform(m, text_output=True))
-                except Exception, e:
-                    print >>sys.stderr, "%s @%s[%i]: jq normalization error: %s (%s)" % (str(datetime.datetime.utcnow()), msg.topic, len(msgs), e, m)
-                    return
-                if verbose > 2:
-                    print(str(datetime.datetime.utcnow())+" @"+msg.topic+"["+str(len(msgs))+"]: transformed message = "+str(m))
-                try:
-                    m = re.sub('<<<(.+?)>>>', lambda s: eval(s.group(1)), m)
-                except Exception, e:
-                    print >>sys.stderr, "%s @%s[%i]: eval error: %s" % (str(datetime.datetime.utcnow()), msg.topic, len(msgs), e)
-                    return
-                if plain and (m[0] == m[-1]) and m.startswith('"'):
-                    m = m[1:-1]
-                if verbose > 1:
-                    print(str(datetime.datetime.utcnow())+" @"+msg.topic+"["+str(len(msgs))+"]: tweaked message = "+str(m))
-                msgs.append( { "topic": topic, "payload": m, "qos": qos, "retain": retain } )
-        except Exception, e:
-            print >>sys.stderr, "%s @%s[%i]: message error: %s" % (str(datetime.datetime.utcnow()), msg.topic, len(msgs), e)
-            return
+            transform = transform.replace("$TOPIC$", msg.topic)
+            if msg.topic in pub["last"]:
+                transform = transform.replace("$LAST$", pub["last"][msg.topic])
+            try:
+                mm = jq(transform).transform(text=msg.payload, multiple_output=True)
+                if isinstance(mm, list):
+                    mm = mm[0]
+                if verbose > 3:
+                    print(str(datetime.datetime.utcnow())+" @"+msg.topic+": transformed message(s) = "+str(mm))
+                if not isinstance(mm, list):
+                    mm = [mm]
+            except Exception, e:
+                print >>sys.stderr, "%s @%s: jq transformation error: %s" % (str(datetime.datetime.utcnow()), msg.topic, e)
+                print >>sys.stderr, "%s @%s: message payload = %s" % (str(datetime.datetime.utcnow()), msg.topic, msg.payload)
+                print >>sys.stderr, "%s @%s: transform = %s" % (str(datetime.datetime.utcnow()), msg.topic, transform)
+                return
+            try:
+                for m in mm:
+                    plain = pub["plain"]
+                    qos = pub["qos"]
+                    retain = pub["retain"]
+                    if isinstance(m, dict) and "topic" in m and "payload" in m:
+                        topic = str(m["topic"])
+                        if "plain" in m:
+                            plain = eval(m["plain"])
+                        if "qos" in m:
+                            qos = eval(m["qos"])
+                        if "retain" in m:
+                            retain = eval(m["retain"])
+                        m = m["payload"]
+                    else:
+                        topic = pubtopic
+                    try:
+                        m = str(jq('.').transform(m, text_output=True))
+                    except Exception, e:
+                        print >>sys.stderr, "%s @%s[%i]: jq normalization error: %s (%s)" % (str(datetime.datetime.utcnow()), msg.topic, len(msgs), e, m)
+                        return
+                    if verbose > 2:
+                        print(str(datetime.datetime.utcnow())+" @"+msg.topic+"["+str(len(msgs))+"]: transformed message = "+str(m))
+                    try:
+                        m = re.sub('<<<(.+?)>>>', lambda s: eval(s.group(1)), m)
+                    except Exception, e:
+                        print >>sys.stderr, "%s @%s[%i]: eval error: %s" % (str(datetime.datetime.utcnow()), msg.topic, len(msgs), e)
+                        return
+                    if plain and (m[0] == m[-1]) and m.startswith('"'):
+                        m = m[1:-1]
+                    if verbose > 1:
+                        print(str(datetime.datetime.utcnow())+" @"+msg.topic+"["+str(len(msgs))+"]: tweaked message = "+str(m))
+                    msgs.append( { "topic": topic, "payload": m, "qos": qos, "retain": retain } )
+            except Exception, e:
+                print >>sys.stderr, "%s @%s[%i]: message error: %s - %s" % (str(datetime.datetime.utcnow()), msg.topic, len(msgs), e, transform)
+                return
     else:
         msgs = [ { "topic": pubtopic, "payload": msg.payload, "qos": pub["qos"], "retain": pub["retain"] } ]
     try:
@@ -132,6 +145,7 @@ def on_message(client, userdata, msg):
             print(str(datetime.datetime.utcnow())+" @"+msg.topic+": "+str(len(msgs))+" message(s) published: "+str(msgs))
     except Exception, e:
         print >>sys.stderr, "%s @%s: publishing error, %s, for %s" % (str(datetime.datetime.utcnow()), msg.topic, e, str(msgs))
+    pub["last"][msg.topic] = str(datetime.datetime.utcnow())
 
 def do_mqtt_forward(config, section, verbose):
     # default configuration
@@ -159,7 +173,7 @@ def do_mqtt_forward(config, section, verbose):
         pubauth = { "username": cfg.get(pubsection, "user"), "password": cfg.get(pubsection, "password") }
     else:
         pubauth = None
-    pub = { "hostname": cfg.get(pubsection, "hostname"), "port": eval(cfg.get(pubsection, "port")), "auth": pubauth, "client_id": cfg.get(pubsection, "client_id"), "topic": pubtopic, "transform": transform, "plain": eval(cfg.get(pubsection, "plain")), "retain": eval(cfg.get(pubsection, "retain")), "qos": eval(cfg.get(pubsection, "qos")) }
+    pub = { "hostname": cfg.get(pubsection, "hostname"), "port": eval(cfg.get(pubsection, "port")), "auth": pubauth, "client_id": cfg.get(pubsection, "client_id"), "topic": pubtopic, "transform": transform, "plain": eval(cfg.get(pubsection, "plain")), "retain": eval(cfg.get(pubsection, "retain")), "qos": eval(cfg.get(pubsection, "qos")), "last": {} }
 
     # subscription setup
     subsection = cfg.get(section, "sub")
@@ -168,12 +182,15 @@ def do_mqtt_forward(config, section, verbose):
         subsection = section
     else:
         subtopic = cfg.get(subsection, "topic")
+    subplain = eval(cfg.get(subsection, "plain"))
     sub = mqtt.Client(client_id=cfg.get(subsection, "client_id")+"_sub", userdata=(verbose, pub, subtopic, eval(cfg.get(subsection, "plain"))))
     sub.on_connect = on_connect
     sub.on_message = on_message
     if eval(cfg.get(subsection, "auth")):
         sub.username_pw_set(cfg.get(subsection, "user"), cfg.get(subsection, "password"))
     sub.connect(cfg.get(subsection, "hostname"), eval(cfg.get(subsection, "port")), 60)
+    if verbose > 3:
+        print(str(datetime.datetime.utcnow())+" subscribed @"+subtopic+" [" + subsection + "]: Plain = "+str(subplain))
 
     # Loop until done...
     sub.loop_start()
